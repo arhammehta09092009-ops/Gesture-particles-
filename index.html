@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Gesture Particles – Debug</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0b0e14;
+  font-family: system-ui, sans-serif;
+}
+
+#start {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #cfd8ff;
+  background: #0b0e14;
+  z-index: 9999;
+}
+
+#status {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  color: lime;
+  font-size: 14px;
+  z-index: 9999;
+}
+
+#videoPreview {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  width: 120px;
+  opacity: 0.35;
+  z-index: 9999;
+}
+</style>
+</head>
+
+<body>
+
+<div id="start">Tap to enable camera</div>
+<div id="status">Waiting…</div>
+
+<!-- MediaPipe (must NOT be module) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1640029074/camera_utils.js"></script>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js';
+
+/* ================= THREE ================= */
+const scene = new THREE.Scene();
+
+const cam3D = new THREE.PerspectiveCamera(
+  60,
+  innerWidth / innerHeight,
+  0.1,
+  100
+);
+cam3D.position.z = 5;
+
+const renderer = new THREE.WebGLRenderer({ alpha: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+document.body.appendChild(renderer.domElement);
+
+window.addEventListener('resize', () => {
+  cam3D.aspect = innerWidth / innerHeight;
+  cam3D.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ================= PARTICLES ================= */
+const COUNT = 2000;
+const geo = new THREE.BufferGeometry();
+const pos = new Float32Array(COUNT * 3);
+
+for (let i = 0; i < COUNT; i++) {
+  pos[i*3]     = (Math.random() - 0.5) * 3;
+  pos[i*3 + 1] = (Math.random() - 0.5) * 3;
+  pos[i*3 + 2] = (Math.random() - 0.5) * 3;
+}
+
+geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+
+const points = new THREE.Points(
+  geo,
+  new THREE.PointsMaterial({ size: 0.035, color: 0x88aaff })
+);
+scene.add(points);
+
+/* ================= MEDIAPIPE ================= */
+const status = document.getElementById('status');
+let gesture = 'none';
+
+const hands = new Hands({
+  locateFile: f =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${f}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+
+hands.onResults(res => {
+  if (!res.multiHandLandmarks || res.multiHandLandmarks.length === 0) {
+    status.innerText = 'NO HAND';
+    gesture = 'none';
+    return;
+  }
+
+  status.innerText = 'HAND DETECTED';
+
+  const lm = res.multiHandLandmarks[0];
+  const thumb = lm[4];
+  const index = lm[8];
+  const palm = lm[0];
+
+  const pinch = Math.hypot(thumb.x - index.x, thumb.y - index.y);
+
+  if (pinch < 0.08) gesture = 'pinch';
+  else if (index.y < palm.y - 0.05) gesture = 'open';
+  else if (index.y > palm.y + 0.08) gesture = 'fist';
+  else gesture = 'none';
+});
+
+/* ================= CAMERA ================= */
+const video = document.createElement('video');
+video.id = 'videoPreview';
+video.setAttribute('playsinline', '');
+document.body.appendChild(video);
+
+const cam = new Camera(video, {
+  onFrame: async () => {
+    await hands.send({ image: video });
+  },
+  width: 640,
+  height: 480
+});
+
+/* ================= START BUTTON ================= */
+document.getElementById('start').addEventListener('click', () => {
+  document.getElementById('start').remove();
+  cam.start();
+});
+
+/* ================= ANIMATE ================= */
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (gesture === 'pinch') {
+    points.scale.lerp(new THREE.Vector3(1.6,1.6,1.6), 0.1);
+  } else {
+    points.scale.lerp(new THREE.Vector3(1,1,1), 0.1);
+  }
+
+  if (gesture === 'open') {
+    points.material.color.setHSL(Math.random(), 0.7, 0.6);
+  }
+
+  points.rotation.y += 0.002;
+  renderer.render(scene, cam3D);
+}
+
+animate();
+</script>
+
+</body>
+</html>
