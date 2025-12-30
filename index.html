@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Gesture Controlled Particle Cosmos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+  }
+  video {
+    display: none;
+  }
+</style>
+</head>
+
+<body>
+
+<video id="video" autoplay playsinline></video>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+/* ---------------- THREE.JS SETUP ---------------- */
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+camera.position.z = 120;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+/* ---------------- PARTICLES ---------------- */
+
+const COUNT = 5000;
+let geometry = new THREE.BufferGeometry();
+let positions = new Float32Array(COUNT * 3);
+let colors = new Float32Array(COUNT * 3);
+
+let mode = "sphere";
+
+function generateShape(type) {
+  for (let i = 0; i < COUNT; i++) {
+    let x, y, z;
+
+    if (type === "heart") {
+      let t = Math.random() * Math.PI * 2;
+      x = 16 * Math.pow(Math.sin(t), 3);
+      y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t);
+      z = (Math.random() - 0.5) * 10;
+    }
+
+    else if (type === "saturn") {
+      let angle = Math.random() * Math.PI * 2;
+      let radius = 40 + Math.random() * 10;
+      x = Math.cos(angle) * radius;
+      y = (Math.random() - 0.5) * 5;
+      z = Math.sin(angle) * radius;
+    }
+
+    else if (type === "firework") {
+      let r = Math.random() * 40;
+      let theta = Math.random() * Math.PI * 2;
+      let phi = Math.random() * Math.PI;
+      x = r * Math.sin(phi) * Math.cos(theta);
+      y = r * Math.cos(phi);
+      z = r * Math.sin(phi) * Math.sin(theta);
+    }
+
+    else {
+      let r = Math.random() * 50;
+      let theta = Math.random() * Math.PI * 2;
+      let phi = Math.random() * Math.PI;
+      x = r * Math.sin(phi) * Math.cos(theta);
+      y = r * Math.cos(phi);
+      z = r * Math.sin(phi) * Math.sin(theta);
+    }
+
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+
+    colors[i * 3] = Math.random();
+    colors[i * 3 + 1] = Math.random();
+    colors[i * 3 + 2] = 1;
+  }
+
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
+generateShape("sphere");
+
+const material = new THREE.PointsMaterial({
+  size: 1.5,
+  vertexColors: true
+});
+
+const particles = new THREE.Points(geometry, material);
+scene.add(particles);
+
+/* ---------------- HAND TRACKING ---------------- */
+
+const video = document.getElementById("video");
+
+const hands = new Hands({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+
+let handX = 0, handY = 0, pinch = false;
+
+hands.onResults(results => {
+  if (results.multiHandLandmarks.length) {
+    const lm = results.multiHandLandmarks[0];
+    handX = (lm[8].x - 0.5) * 200;
+    handY = -(lm[8].y - 0.5) * 200;
+
+    const d = Math.abs(lm[4].x - lm[8].x);
+    pinch = d < 0.03;
+  }
+});
+
+const cam = new Camera(video, {
+  onFrame: async () => await hands.send({ image: video }),
+  width: 640,
+  height: 480
+});
+cam.start();
+
+/* ---------------- ANIMATION LOOP ---------------- */
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  particles.rotation.y += 0.002;
+
+  const pos = geometry.attributes.position.array;
+  for (let i = 0; i < COUNT; i++) {
+    pos[i * 3] += (handX - pos[i * 3]) * 0.0005;
+    pos[i * 3 + 1] += (handY - pos[i * 3 + 1]) * 0.0005;
+  }
+
+  geometry.attributes.position.needsUpdate = true;
+
+  if (pinch) {
+    mode =
+      mode === "sphere" ? "heart" :
+      mode === "heart" ? "saturn" :
+      mode === "saturn" ? "firework" : "sphere";
+    generateShape(mode);
+  }
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+/* ---------------- RESIZE ---------------- */
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+
+</body>
+</html>
